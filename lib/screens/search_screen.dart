@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../services/follow_service.dart';
-import 'profile_screen.dart';
+import 'profile_screen.dart'; // To open user profile
 
 class SearchScreen extends StatefulWidget {
   @override
@@ -9,33 +8,28 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final _searchController = TextEditingController();
-  List<Map<String, dynamic>> _searchResults = [];
-  bool _isLoading = false;
-  final _followService = FollowService();
-  final _currentUserId = Supabase.instance.client.auth.currentUser?.id;
+  final _controller = TextEditingController();
+  List<Map<String, dynamic>> _results = [];
+  bool _loading = false;
 
-  void _onSearchChanged(String query) async {
+  void _search(String query) async {
     if (query.isEmpty) {
-      if (mounted) setState(() => _searchResults = []);
+      setState(() => _results = []);
       return;
     }
-
-    setState(() => _isLoading = true);
-
-    // Simple ILIKE search on username
-    final res = await Supabase.instance.client
+    setState(() => _loading = true);
+    
+    // ILIKE is case-insensitive search
+    final response = await Supabase.instance.client
         .from('profiles')
         .select()
-        .ilike('username', '%$query%')
+        .ilike('username', '%$query%') 
         .limit(20);
 
-    if (mounted) {
-      setState(() {
-        _searchResults = List<Map<String, dynamic>>.from(res ?? []);
-        _isLoading = false;
-      });
-    }
+    setState(() {
+      _results = List<Map<String, dynamic>>.from(response);
+      _loading = false;
+    });
   }
 
   @override
@@ -45,75 +39,37 @@ class _SearchScreenState extends State<SearchScreen> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: TextField(
-          controller: _searchController,
+          controller: _controller,
           style: const TextStyle(color: Colors.white),
           decoration: InputDecoration(
             hintText: 'Search users...',
-            hintStyle: const TextStyle(color: Colors.grey),
-            filled: true,
-            fillColor: Colors.grey[900],
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: BorderSide.none,
+            hintStyle: TextStyle(color: Colors.grey[600]),
+            border: InputBorder.none,
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.search, color: Colors.white),
+              onPressed: () => _search(_controller.text),
             ),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            suffixIcon: _isLoading
-                ? const Padding(
-                    padding: EdgeInsets.all(10),
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
           ),
-          onChanged: _onSearchChanged,
+          onSubmitted: _search,
         ),
       ),
-      body: _searchResults.isEmpty
-          ? const Center(
-              child: Text(
-                'Search for users to follow',
-                style: TextStyle(color: Colors.grey),
-              ),
-            )
+      body: _loading 
+          ? const Center(child: CircularProgressIndicator()) 
           : ListView.builder(
-              itemCount: _searchResults.length,
+              itemCount: _results.length,
               itemBuilder: (context, index) {
-                final user = _searchResults[index];
-                if (user['id'] == _currentUserId)
-                  return const SizedBox.shrink(); // Hide self
-
+                final user = _results[index];
                 return ListTile(
                   leading: CircleAvatar(
-                    backgroundImage: (user['avatar_url'] != null)
-                        ? NetworkImage(user['avatar_url'])
-                        : null,
-                    backgroundColor: Colors.grey[800],
-                    child: user['avatar_url'] == null
-                        ? const Icon(Icons.person, color: Colors.white)
-                        : null,
+                    backgroundImage: user['avatar_url'] != null ? NetworkImage(user['avatar_url']) : null,
+                    child: user['avatar_url'] == null ? const Icon(Icons.person) : null,
                   ),
-                  title: Text(
-                    user['username'] ?? 'User',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: user['bio'] != null
-                      ? Text(
-                          user['bio'],
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.grey),
-                        )
-                      : null,
+                  title: Text(user['username'] ?? 'User', style: const TextStyle(color: Colors.white)),
                   onTap: () {
-                    // Go to profile
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ProfileScreen(userId: user['id']),
-                      ),
-                    );
+                    // Navigate to their profile
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => ProfileScreen(userId: user['id']),
+                    ));
                   },
                 );
               },
