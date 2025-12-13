@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/upload_service.dart';
 import '../services/post_service.dart';
 import '../widgets/full_screen_viewer.dart';
+import 'edit_profile_screen.dart'; // Ensure this import exists
 
 class ProfileScreen extends StatefulWidget {
   final String? userId; // If null, shows current user
@@ -26,9 +27,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    final myId = Supabase.instance.client.auth.currentUser!.id;
+    final myId = Supabase.instance.client.auth.currentUser?.id;
+    if (myId == null) return; // Basic safety check
+    
     _targetUserId = widget.userId ?? myId;
     _isMe = _targetUserId == myId;
+    
     if (!_isMe) _checkFollowStatus(myId);
   }
 
@@ -44,7 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _changeProfilePic() async {
-    if (!_isMe) return; // Only I can change my pic
+    if (!_isMe) return; 
     final xFile = await _uploadService.pickImage();
     if (xFile != null) {
       await _uploadService.updateProfilePic(_targetUserId, File(xFile.path));
@@ -55,11 +59,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = Provider.of<AuthService>(context);
+    // If auth state is lost, show login message or redirect
+    if (!auth.isLoggedIn) return const Scaffold(body: Center(child: Text("Please Login")));
 
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Profile'),
+        title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.black,
         actions: [
           if (_isMe) 
@@ -78,6 +84,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 
                 final followers = (profile['followers'] as List?)?.length ?? 0;
                 final following = (profile['following'] as List?)?.length ?? 0;
+                
+                // 🔴 NEW: Fetching the real data
+                final displayName = (profile['name'] != null && profile['name'].toString().isNotEmpty) 
+                    ? profile['name'] 
+                    : (profile['username'] ?? 'User');
+                final bio = (profile['bio'] != null && profile['bio'].toString().isNotEmpty) 
+                    ? profile['bio'] 
+                    : 'No bio yet.';
 
                 return Column(
                   children: [
@@ -109,7 +123,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                               children: [
-                                _statCol("0", "Posts"), // Post count requires separate query usually
+                                _statCol("0", "Posts"), // Requires separate count query or counter column
                                 _statCol("$followers", "Followers"),
                                 _statCol("$following", "Following"),
                               ],
@@ -119,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     
-                    // Name & Bio
+                    // 🔴 UPDATED: Name & Bio Section
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: Align(
@@ -127,9 +141,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(profile['username'] ?? 'User', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                            const SizedBox(height: 5),
-                            const Text("Digital Creator | Flutter Dev \nWelcome to my Masti profile!", style: TextStyle(color: Colors.white70)),
+                            // 1. Display Name
+                            Text(
+                              displayName, 
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)
+                            ),
+                            
+                            // 2. Username (Handle)
+                            if (profile['name'] != null) 
+                              Text(
+                                "@${profile['username']}", 
+                                style: const TextStyle(color: Colors.white54, fontSize: 14)
+                              ),
+                            
+                            const SizedBox(height: 8),
+                            
+                            // 3. Bio
+                            Text(
+                              bio, 
+                              style: const TextStyle(color: Colors.white70, fontSize: 14)
+                            ),
                           ],
                         ),
                       ),
@@ -140,7 +171,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _isMe 
-                        ? _buildButton("Edit Profile", () {}) 
+                        ? _buildButton("Edit Profile", () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
+                          }) 
                         : _buildButton(_isFollowing ? "Following" : "Follow", _toggleFollow, isPrimary: !_isFollowing),
                     ),
                   ],

@@ -15,20 +15,27 @@ class AuthService extends ChangeNotifier {
 
   bool get isLoggedIn => user != null;
 
-  Future<String?> register(String email, String password, String username) async {
+  // 1. REGISTER with ALL details
+  Future<String?> registerAllDetails({
+    required String email, 
+    required String phone, 
+    required String username, 
+    required String password
+  }) async {
     try {
-      // 1. Sign up auth user
+      // Create Auth User (Email is the unique identifier for Supabase Auth)
       final AuthResponse res = await _supabase.auth.signUp(
         email: email, 
         password: password,
       );
 
-      // 2. Create profile entry in database
       if (res.user != null) {
+        // Save ALL details to Profiles
         await _supabase.from('profiles').insert({
           'id': res.user!.id,
           'username': username,
           'email': email,
+          'phone': phone,
           'followers': [],
           'following': [],
         });
@@ -38,21 +45,38 @@ class AuthService extends ChangeNotifier {
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      return "An unexpected error occurred: $e";
+      return "Error: $e";
     }
   }
 
-  Future<String?> login(String email, String password) async {
+  // 2. Smart Login
+  Future<String?> smartLogin(String input, String password) async {
     try {
-      await _supabase.auth.signInWithPassword(email: email, password: password);
+      String emailToUse = input;
+
+      // If input is NOT an email, look it up!
+      if (!input.contains('@')) {
+        final response = await _supabase
+            .from('profiles')
+            .select('email')
+            .or('username.eq.$input, phone.eq.$input')
+            .maybeSingle();
+
+        if (response == null) {
+          return "User not found with that Phone or Username.";
+        }
+        emailToUse = response['email'];
+      }
+
+      await _supabase.auth.signInWithPassword(email: emailToUse, password: password);
       return null;
     } on AuthException catch (e) {
       return e.message;
     } catch (e) {
-      return e.toString();
+      return "Login failed: $e";
     }
   }
-
+  
   Future<void> logout() async {
     await _supabase.auth.signOut();
   }

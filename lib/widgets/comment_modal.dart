@@ -15,183 +15,256 @@ class _CommentModalState extends State<CommentModal> {
   final _controller = TextEditingController();
   final _postService = PostService();
   final _myId = Supabase.instance.client.auth.currentUser!.id;
-  int? _replyingToId; // ID of the comment being replied to
+  int? _replyingToId;
   String _replyingToName = '';
 
   void _submit() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    
     _controller.clear();
     FocusScope.of(context).unfocus();
-    
     await _postService.addComment(widget.postId, _myId, text, parentId: _replyingToId);
-    
-    // Reset reply state
-    setState(() {
-      _replyingToId = null;
-      _replyingToName = '';
-    });
+    setState(() { _replyingToId = null; _replyingToName = ''; });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85, // Taller, like screenshot
-      decoration: const BoxDecoration(
-        color: Color(0xFF121212), // Dark bg like screens
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 15),
-          const Text("Comments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.white)),
-          const Divider(color: Colors.grey),
-          
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: Supabase.instance.client
-                  .from('comments')
-                  .stream(primaryKey: ['id'])
-                  .eq('post_id', widget.postId)
-                  .order('created_at', ascending: true),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                
-                final allComments = snapshot.data!;
-                // Separate parent comments and replies could be done here logic-wise
-                // For MVP, we list them flat but indent replies
-                
-                return ListView.builder(
-                  itemCount: allComments.length,
-                  itemBuilder: (context, index) {
-                    final c = allComments[index];
-                    final isReply = c['parent_id'] != null;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.black,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[700], borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 15),
+              const Text("Comments", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 10),
+              const Divider(color: Colors.white10, height: 1),
+
+              Expanded(
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: Supabase.instance.client
+                      .from('comments')
+                      .stream(primaryKey: ['id'])
+                      .eq('post_id', widget.postId)
+                      .order('created_at', ascending: true),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+                    final comments = snapshot.data!;
                     
-                    return FutureBuilder<Map<String, dynamic>?>(
-                      future: Supabase.instance.client.from('profiles').select().eq('id', c['user_id']).maybeSingle(),
-                      builder: (context, userSnap) {
-                        final user = userSnap.data;
-                        return Padding(
-                          padding: EdgeInsets.only(left: isReply ? 50.0 : 10.0, top: 8, bottom: 8),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              CircleAvatar(
-                                radius: 18,
-                                backgroundImage: (user != null && user['avatar_url'] != null)
-                                    ? NetworkImage(user['avatar_url']) : null,
-                                child: user?['avatar_url'] == null ? const Icon(Icons.person, size: 15) : null,
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    RichText(
-                                      text: TextSpan(
-                                        children: [
-                                          TextSpan(
-                                            text: user?['username'] ?? 'User',
-                                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 13),
-                                          ),
-                                          const TextSpan(text: "  "),
-                                          TextSpan(
-                                            text: c['text'],
-                                            style: const TextStyle(color: Colors.white70, fontSize: 13),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        Text(
-                                          timeago.format(DateTime.parse(c['created_at']), locale: 'en_short'),
-                                          style: const TextStyle(color: Colors.grey, fontSize: 11),
-                                        ),
-                                        const SizedBox(width: 15),
-                                        GestureDetector(
-                                          onTap: () {
-                                            setState(() {
-                                              _replyingToId = c['id'];
-                                              _replyingToName = user?['username'] ?? 'User';
-                                            });
-                                          },
-                                          child: const Text("Reply", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11)),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Like button for comment
-                              const Icon(Icons.favorite_border, size: 16, color: Colors.grey),
-                              const SizedBox(width: 10),
-                            ],
-                          ),
+                    return ListView.builder(
+                      controller: scrollController,
+                      itemCount: comments.length,
+                      itemBuilder: (context, index) {
+                        final c = comments[index];
+                        // Using a separate widget for each item to handle Like State efficiently
+                        return CommentItem(
+                          comment: c,
+                          onReply: (id, name) {
+                            setState(() {
+                              _replyingToId = id;
+                              _replyingToName = name;
+                            });
+                          },
                         );
-                      }
+                      },
                     );
                   },
-                );
-              },
-            ),
+                ),
+              ),
+
+              if (_replyingToId != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  color: Colors.grey[900],
+                  child: Row(
+                    children: [
+                      Text("Replying to $_replyingToName", style: const TextStyle(color: Colors.grey)),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                        onPressed: () => setState(() => _replyingToId = null),
+                      )
+                    ],
+                  ),
+                ),
+
+              _buildInputBar(),
+            ],
           ),
-          
-          // Reply Indicator
-          if (_replyingToId != null)
-            Container(
-              color: Colors.grey[900],
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        );
+      },
+    );
+  }
+
+  Widget _buildInputBar() {
+    return Container(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom + 10,
+        left: 10, right: 10, top: 10
+      ),
+      color: Colors.black,
+      child: Row(
+        children: [
+          const CircleAvatar(radius: 16, backgroundColor: Colors.grey, child: Icon(Icons.person, size: 16)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Container(
+              height: 45,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2C2C2C),
+                borderRadius: BorderRadius.circular(25),
+              ),
               child: Row(
                 children: [
-                  Text("Replying to $_replyingToName", style: const TextStyle(color: Colors.grey)),
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16, color: Colors.white),
-                    onPressed: () => setState(() => _replyingToId = null),
-                  )
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(
+                        hintText: "Hello Dear !",
+                        hintStyle: TextStyle(color: Colors.white54),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  IconButton(icon: const Icon(Icons.alternate_email, color: Colors.grey), onPressed: () {}),
+                  IconButton(icon: const Icon(Icons.emoji_emotions_outlined, color: Colors.grey), onPressed: () {}),
                 ],
               ),
             ),
-
-          // Input Field
-          Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.of(context).viewInsets.bottom + 10, 
-              left: 10, right: 10, top: 5
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: "Add a comment...",
-                      hintStyle: const TextStyle(color: Colors.grey),
-                      filled: true,
-                      fillColor: Colors.grey[900],
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                CircleAvatar(
-                  backgroundColor: const Color(0xFFC13584),
-                  radius: 22,
-                  child: IconButton(
-                    onPressed: _submit, 
-                    icon: const Icon(Icons.arrow_upward, color: Colors.white, size: 20),
-                  ),
-                )
-              ],
-            ),
+          ),
+          const SizedBox(width: 10),
+          IconButton(
+            onPressed: _submit,
+            icon: const Icon(Icons.send, color: Color(0xFFFDD835), size: 30),
           ),
         ],
       ),
+    );
+  }
+}
+
+// --------------------------------------------------------
+// NEW: Comment Item Widget (Handles Like Logic Individually)
+// --------------------------------------------------------
+class CommentItem extends StatefulWidget {
+  final Map<String, dynamic> comment;
+  final Function(int id, String name) onReply;
+
+  const CommentItem({super.key, required this.comment, required this.onReply});
+
+  @override
+  State<CommentItem> createState() => _CommentItemState();
+}
+
+class _CommentItemState extends State<CommentItem> {
+  bool _isLiked = false;
+  final _postService = PostService();
+  final _myId = Supabase.instance.client.auth.currentUser!.id;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkLikeStatus();
+  }
+
+  void _checkLikeStatus() async {
+    bool liked = await _postService.hasUserLikedComment(widget.comment['id'].toString(), _myId);
+    if (mounted) setState(() => _isLiked = liked);
+  }
+
+  void _toggleLike() async {
+    setState(() => _isLiked = !_isLiked); // Optimistic update
+    await _postService.toggleCommentLike(widget.comment['id'].toString(), _myId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.comment;
+    final bool isReply = c['parent_id'] != null;
+
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: Supabase.instance.client.from('profiles').select().eq('id', c['user_id']).maybeSingle(),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        final username = user?['username'] ?? 'Unknown';
+        final avatarUrl = user?['avatar_url'];
+
+        return Padding(
+          padding: EdgeInsets.only(left: isReply ? 50 : 16, right: 16, top: 12, bottom: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.grey[800],
+                backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                child: avatarUrl == null ? const Icon(Icons.person, size: 20, color: Colors.white) : null,
+              ),
+              const SizedBox(width: 12),
+              
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(username, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                        // Removed verified tick as requested
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(c['text'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Text(
+                          timeago.format(DateTime.parse(c['created_at']), locale: 'en_short'),
+                          style: const TextStyle(color: Colors.grey, fontSize: 11),
+                        ),
+                        const SizedBox(width: 15),
+                        GestureDetector(
+                          onTap: () => widget.onReply(c['id'], username),
+                          child: const Text("Reply", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold, fontSize: 11)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // LIKE BUTTON COLUMN
+              GestureDetector(
+                onTap: _toggleLike,
+                child: Column(
+                  children: [
+                    Icon(
+                      _isLiked ? Icons.favorite : Icons.favorite_border,
+                      color: _isLiked ? Colors.red : Colors.grey,
+                      size: 18
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      "${c['likes_count'] ?? 0}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 10),
+                    ),
+                  ],
+                ),
+              )
+            ],
+          ),
+        );
+      }
     );
   }
 }

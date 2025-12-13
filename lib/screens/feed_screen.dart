@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../widgets/video_player_item.dart'; 
 import 'package:timeago/timeago.dart' as timeago;
+
+// Imports from your project structure
+import '../widgets/video_player_item.dart'; 
+import '../widgets/comment_modal.dart'; 
+import '../widgets/live_users_bar.dart'; // We created this in Step 1
 import '../services/post_service.dart';
-import '../widgets/comment_modal.dart'; // We will make this next
 
 class FeedScreen extends StatelessWidget {
   @override
@@ -20,26 +23,46 @@ class FeedScreen extends StatelessWidget {
           IconButton(icon: const Icon(Icons.message_outlined), onPressed: () {}),
         ],
       ),
-      body: StreamBuilder<List<Map<String, dynamic>>>(
-        // Fetch posts + user info using a join (if you set up foreign keys)
-        // For now, simpler approach:
-        stream: Supabase.instance.client
-            .from('posts')
-            .stream(primaryKey: ['id'])
-            .order('created_at', ascending: false),
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-          final posts = snapshot.data!;
-          
-          return ListView.builder(
-            itemCount: posts.length,
-            itemBuilder: (context, index) => PostCard(post: posts[index]),
-          );
-        },
+      body: CustomScrollView(
+        slivers: [
+          // 1. LIVE USERS BAR (Stories area)
+          const SliverToBoxAdapter(
+            child: LiveUsersBar(),
+          ),
+
+          // 2. THE POSTS FEED
+          StreamBuilder<List<Map<String, dynamic>>>(
+            stream: Supabase.instance.client
+                .from('posts')
+                .stream(primaryKey: ['id'])
+                .order('created_at', ascending: false),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData) {
+                return const SliverToBoxAdapter(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
+              }
+              final posts = snapshot.data!;
+              
+              if (posts.isEmpty) {
+                return const SliverToBoxAdapter(child: Center(child: Text("No posts yet", style: TextStyle(color: Colors.white))));
+              }
+
+              return SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) => PostCard(post: posts[index]),
+                  childCount: posts.length,
+                ),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 }
+
+// ---------------------------------------------------------------------------
+// POST CARD WIDGET (Handles Likes, Animations, and Display)
+// ---------------------------------------------------------------------------
 
 class PostCard extends StatefulWidget {
   final Map<String, dynamic> post;
@@ -67,7 +90,7 @@ class _PostCardState extends State<PostCard> {
   }
 
   void _toggleLike() async {
-    setState(() => _isLiked = !_isLiked); // Optimistic UI update (Instant red)
+    setState(() => _isLiked = !_isLiked); // Optimistic UI update
     await _postService.toggleLike(widget.post['id'].toString(), _userId);
   }
 
@@ -76,7 +99,7 @@ class _PostCardState extends State<PostCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 1. Header
+        // A. Post Header (User Avatar + Name)
         FutureBuilder<Map<String, dynamic>?>(
           future: Supabase.instance.client.from('profiles').select().eq('id', widget.post['user_id']).maybeSingle(),
           builder: (context, snap) {
@@ -99,7 +122,7 @@ class _PostCardState extends State<PostCard> {
           }
         ),
 
-        // 2. Media (Image/Video) with Double Tap to Like
+        // B. Main Media (Double Tap Logic)
         GestureDetector(
           onDoubleTap: () {
             if (!_isLiked) _toggleLike();
@@ -130,7 +153,7 @@ class _PostCardState extends State<PostCard> {
           ),
         ),
 
-        // 3. Action Buttons
+        // C. Action Buttons Row
         Row(
           children: [
             IconButton(
@@ -159,7 +182,7 @@ class _PostCardState extends State<PostCard> {
           ],
         ),
 
-        // 4. Stats & Caption
+        // D. Likes, Caption & Date
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Column(
@@ -171,7 +194,8 @@ class _PostCardState extends State<PostCard> {
                 text: TextSpan(
                   style: const TextStyle(color: Colors.white),
                   children: [
-                    const TextSpan(text: 'Username ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    // Note: In a real app, you'd fetch the username again here or pass it down
+                    const TextSpan(text: 'User ', style: TextStyle(fontWeight: FontWeight.bold)),
                     TextSpan(text: widget.post['caption'] ?? ''),
                   ],
                 ),

@@ -37,6 +37,24 @@ class PostService {
     return res != null;
   }
 
+  // --- COMMENT LIKES ---
+  Future<bool> hasUserLikedComment(String commentId, String userId) async {
+    final res = await _supabase.from('comment_likes')
+        .select()
+        .match({'comment_id': commentId, 'user_id': userId})
+        .maybeSingle();
+    return res != null;
+  }
+
+  Future<void> toggleCommentLike(String commentId, String userId) async {
+    final liked = await hasUserLikedComment(commentId, userId);
+    if (liked) {
+      await _supabase.from('comment_likes').delete().match({'comment_id': commentId, 'user_id': userId});
+    } else {
+      await _supabase.from('comment_likes').insert({'comment_id': commentId, 'user_id': userId});
+    }
+  }
+
   Future<void> toggleFollow(String myId, String targetUserId) async {
     final following = await isFollowing(myId, targetUserId);
     if (following) {
