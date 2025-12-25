@@ -55,4 +55,80 @@ class FollowService {
     if (res is List) return res.length;
     return 0; // fallback
   }
+
+  /// Get list of followers with profile data
+  Future<List<Map<String, dynamic>>> getFollowersList(String userId) async {
+    try {
+      // Get all follower IDs
+      final followsData = await _supabase
+          .from('follows')
+          .select('follower_id')
+          .eq('following_id', userId);
+
+      if (followsData.isEmpty) {
+        print('No followers found in follows table for user: $userId');
+        return [];
+      }
+
+      // Extract follower IDs
+      final followerIds = followsData
+          .map((row) => row['follower_id'] as String)
+          .toList();
+
+      print('Found ${followerIds.length} follower IDs: $followerIds');
+
+      // Get profile data for all followers
+      final profiles = await _supabase
+          .from('profiles')
+          .select('id, username, name, avatar_url')
+          .inFilter('id', followerIds);
+
+      print('Fetched ${profiles.length} follower profiles');
+
+      return List<Map<String, dynamic>>.from(
+        profiles.map((profile) => {'profiles': profile}),
+      );
+    } catch (e) {
+      print('Error fetching followers list: $e');
+      return [];
+    }
+  }
+
+  /// Get list of following with profile data
+  Future<List<Map<String, dynamic>>> getFollowingList(String userId) async {
+    try {
+      // Get all following IDs
+      final followsData = await _supabase
+          .from('follows')
+          .select('following_id')
+          .eq('follower_id', userId);
+
+      if (followsData.isEmpty) {
+        print('No following found in follows table for user: $userId');
+        return [];
+      }
+
+      // Extract following IDs
+      final followingIds = followsData
+          .map((row) => row['following_id'] as String)
+          .toList();
+
+      print('Found ${followingIds.length} following IDs: $followingIds');
+
+      // Get profile data for all following
+      final profiles = await _supabase
+          .from('profiles')
+          .select('id, username, name, avatar_url')
+          .inFilter('id', followingIds);
+
+      print('Fetched ${profiles.length} following profiles');
+
+      return List<Map<String, dynamic>>.from(
+        profiles.map((profile) => {'profiles': profile}),
+      );
+    } catch (e) {
+      print('Error fetching following list: $e');
+      return [];
+    }
+  }
 }

@@ -4,57 +4,80 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 // Imports from your project structure
-import '../widgets/video_player_item.dart'; 
-import '../widgets/comment_modal.dart'; 
+import '../widgets/video_player_item.dart';
+import '../widgets/comment_modal.dart';
 import '../widgets/live_users_bar.dart'; // We created this in Step 1
 import '../services/post_service.dart';
 
-class FeedScreen extends StatelessWidget {
+class FeedScreen extends StatefulWidget {
+  @override
+  State<FeedScreen> createState() => _FeedScreenState();
+}
+
+class _FeedScreenState extends State<FeedScreen> {
+  // Key to force rebuild of the stream
+  int _refreshKey = 0;
+
+  Future<void> _handleRefresh() async {
+    setState(() {
+      _refreshKey++; // This will force StreamBuilder to rebuild
+    });
+    // Add a small delay for better UX
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: const Color(0xFFC13584), // Pink/purple color
         backgroundColor: Colors.black,
-        title: const Text('Instagram', 
-          style: TextStyle(fontFamily: 'Cursive', fontSize: 32, color: Colors.white)),
-        actions: [
-          IconButton(icon: const Icon(Icons.favorite_border), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.message_outlined), onPressed: () {}),
-        ],
-      ),
-      body: CustomScrollView(
-        slivers: [
-          // 1. LIVE USERS BAR (Stories area)
-          const SliverToBoxAdapter(
-            child: LiveUsersBar(),
-          ),
+        child: CustomScrollView(
+          key: ValueKey(_refreshKey), // Force rebuild on refresh
+          slivers: [
+            // 1. LIVE USERS BAR (Stories area)
+            const SliverToBoxAdapter(child: LiveUsersBar()),
 
-          // 2. THE POSTS FEED
-          StreamBuilder<List<Map<String, dynamic>>>(
-            stream: Supabase.instance.client
-                .from('posts')
-                .stream(primaryKey: ['id'])
-                .order('created_at', ascending: false),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData) {
-                return const SliverToBoxAdapter(child: SizedBox(height: 200, child: Center(child: CircularProgressIndicator())));
-              }
-              final posts = snapshot.data!;
-              
-              if (posts.isEmpty) {
-                return const SliverToBoxAdapter(child: Center(child: Text("No posts yet", style: TextStyle(color: Colors.white))));
-              }
+            // 2. THE POSTS FEED
+            StreamBuilder<List<Map<String, dynamic>>>(
+              stream: Supabase.instance.client
+                  .from('posts')
+                  .stream(primaryKey: ['id'])
+                  .order('created_at', ascending: false),
+              builder: (context, snapshot) {
+                if (!snapshot.hasData) {
+                  return const SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 200,
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  );
+                }
+                final posts = snapshot.data!;
 
-              return SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) => PostCard(post: posts[index]),
-                  childCount: posts.length,
-                ),
-              );
-            },
-          ),
-        ],
+                if (posts.isEmpty) {
+                  return const SliverToBoxAdapter(
+                    child: Center(
+                      child: Text(
+                        "No posts yet",
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  );
+                }
+
+                return SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) => PostCard(post: posts[index]),
+                    childCount: posts.length,
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -85,7 +108,10 @@ class _PostCardState extends State<PostCard> {
   }
 
   void _checkLikeStatus() async {
-    bool hasLiked = await _postService.userHasLiked(widget.post['id'].toString(), _userId);
+    bool hasLiked = await _postService.userHasLiked(
+      widget.post['id'].toString(),
+      _userId,
+    );
     if (mounted) setState(() => _isLiked = hasLiked);
   }
 
@@ -101,7 +127,11 @@ class _PostCardState extends State<PostCard> {
       children: [
         // A. Post Header (User Avatar + Name)
         FutureBuilder<Map<String, dynamic>?>(
-          future: Supabase.instance.client.from('profiles').select().eq('id', widget.post['user_id']).maybeSingle(),
+          future: Supabase.instance.client
+              .from('profiles')
+              .select()
+              .eq('id', widget.post['user_id'])
+              .maybeSingle(),
           builder: (context, snap) {
             final user = snap.data;
             return ListTile(
@@ -112,14 +142,20 @@ class _PostCardState extends State<PostCard> {
                 backgroundImage: (user != null && user['avatar_url'] != null)
                     ? NetworkImage(user['avatar_url'])
                     : null,
-                child: (user == null || user['avatar_url'] == null) 
-                    ? const Icon(Icons.person, color: Colors.white) : null,
+                child: (user == null || user['avatar_url'] == null)
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
               ),
-              title: Text(user?['username'] ?? 'User', 
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              title: Text(
+                user?['username'] ?? 'User',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
               trailing: const Icon(Icons.more_vert, color: Colors.white),
             );
-          }
+          },
         ),
 
         // B. Main Media (Double Tap Logic)
@@ -143,7 +179,8 @@ class _PostCardState extends State<PostCard> {
                     : CachedNetworkImage(
                         imageUrl: widget.post['media_url'],
                         fit: BoxFit.cover,
-                        placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                        placeholder: (context, url) =>
+                            const Center(child: CircularProgressIndicator()),
                       ),
               ),
               // Big White Heart Animation
@@ -157,8 +194,10 @@ class _PostCardState extends State<PostCard> {
         Row(
           children: [
             IconButton(
-              icon: Icon(_isLiked ? Icons.favorite : Icons.favorite_border, 
-                color: _isLiked ? Colors.red : Colors.white),
+              icon: Icon(
+                _isLiked ? Icons.favorite : Icons.favorite_border,
+                color: _isLiked ? Colors.red : Colors.white,
+              ),
               onPressed: _toggleLike,
             ),
             IconButton(
@@ -167,7 +206,8 @@ class _PostCardState extends State<PostCard> {
                 context: context,
                 isScrollControlled: true,
                 backgroundColor: Colors.transparent,
-                builder: (context) => CommentModal(postId: widget.post['id'].toString()),
+                builder: (context) =>
+                    CommentModal(postId: widget.post['id'].toString()),
               ),
             ),
             IconButton(
@@ -188,14 +228,23 @@ class _PostCardState extends State<PostCard> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${widget.post['likes']} likes', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+              Text(
+                '${widget.post['likes']} likes',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
               const SizedBox(height: 4),
               RichText(
                 text: TextSpan(
                   style: const TextStyle(color: Colors.white),
                   children: [
                     // Note: In a real app, you'd fetch the username again here or pass it down
-                    const TextSpan(text: 'User ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    const TextSpan(
+                      text: 'User ',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                     TextSpan(text: widget.post['caption'] ?? ''),
                   ],
                 ),
@@ -207,13 +256,18 @@ class _PostCardState extends State<PostCard> {
                     context: context,
                     isScrollControlled: true,
                     backgroundColor: Colors.transparent,
-                    builder: (context) => CommentModal(postId: widget.post['id'].toString()),
+                    builder: (context) =>
+                        CommentModal(postId: widget.post['id'].toString()),
                   ),
-                  child: Text('View all ${widget.post['comments']} comments', 
-                    style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                  child: Text(
+                    'View all ${widget.post['comments']} comments',
+                    style: const TextStyle(color: Colors.grey, fontSize: 13),
+                  ),
                 ),
               Text(
-                timeago.format(DateTime.parse(widget.post['created_at'].toString())),
+                timeago.format(
+                  DateTime.parse(widget.post['created_at'].toString()),
+                ),
                 style: const TextStyle(color: Colors.grey, fontSize: 11),
               ),
             ],

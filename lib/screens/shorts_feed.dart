@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 import '../services/post_service.dart';
 import '../widgets/comment_modal.dart';
+import 'profile_screen.dart';
 
 class ShortsFeed extends StatelessWidget {
   const ShortsFeed({super.key});
@@ -16,7 +17,10 @@ class ShortsFeed extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Reels', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
+        title: const Text(
+          'Reels',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+        ),
         centerTitle: false,
         automaticallyImplyLeading: false, // Hides back button if on main tabs
       ),
@@ -28,11 +32,18 @@ class ShortsFeed extends StatelessWidget {
             .order('created_at', ascending: false),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator(color: Color(0xFFC13584)));
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFFC13584)),
+            );
           }
           final docs = snapshot.data!;
           if (docs.isEmpty) {
-            return const Center(child: Text("No Reels yet", style: TextStyle(color: Colors.white)));
+            return const Center(
+              child: Text(
+                "No Reels yet",
+                style: TextStyle(color: Colors.white),
+              ),
+            );
           }
 
           return PageView.builder(
@@ -56,7 +67,8 @@ class ShortsPlayerItem extends StatefulWidget {
   State<ShortsPlayerItem> createState() => _ShortsPlayerItemState();
 }
 
-class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
+class _ShortsPlayerItemState extends State<ShortsPlayerItem>
+    with WidgetsBindingObserver {
   late VideoPlayerController _controller;
   final _postService = PostService();
   final _myId = Supabase.instance.client.auth.currentUser!.id;
@@ -69,12 +81,31 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initVideo();
     _checkLikeStatus();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Pause video when app goes to background or when navigating away
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (_initialized && _isPlaying) {
+        _controller.pause();
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // Resume playing when coming back
+      if (_initialized && _isPlaying) {
+        _controller.play();
+      }
+    }
+  }
+
   void _initVideo() async {
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.post['media_url']));
+    _controller = VideoPlayerController.networkUrl(
+      Uri.parse(widget.post['media_url']),
+    );
     try {
       await _controller.initialize();
       if (mounted) {
@@ -88,7 +119,10 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
   }
 
   void _checkLikeStatus() async {
-    bool hasLiked = await _postService.userHasLiked(widget.post['id'].toString(), _myId);
+    bool hasLiked = await _postService.userHasLiked(
+      widget.post['id'].toString(),
+      _myId,
+    );
     if (mounted) setState(() => _isLiked = hasLiked);
   }
 
@@ -100,7 +134,7 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
   void _handleDoubleTap() {
     if (!_isLiked) _toggleLike();
     setState(() => _showHeartAnimation = true);
-    
+
     // Hide the big heart after 1.2 seconds
     Future.delayed(const Duration(milliseconds: 1200), () {
       if (mounted) setState(() => _showHeartAnimation = false);
@@ -108,14 +142,19 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
   }
 
   void _togglePlay() {
+    if (_isPlaying) {
+      _controller.pause();
+    } else {
+      _controller.play();
+    }
     setState(() {
-      _isPlaying ? _controller.pause() : _controller.play();
       _isPlaying = !_isPlaying;
     });
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller.pause(); // Stop playing before disposing
     _controller.dispose();
     super.dispose();
@@ -125,24 +164,20 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // 1. FULL SCREEN VIDEO
-        GestureDetector(
-          onTap: _togglePlay,
-          onDoubleTap: _handleDoubleTap,
-          child: Container(
-            color: Colors.black,
-            height: double.infinity,
-            width: double.infinity,
-            child: _initialized
-                ? FittedBox(
-                    fit: BoxFit.cover, // Ensures video fills screen completely
-                    child: SizedBox(
-                      width: _controller.value.size.width,
-                      height: _controller.value.size.height,
+        // 1. CENTERED VIDEO WITH ASPECT RATIO
+        Container(
+          color: Colors.black,
+          child: Center(
+            child: GestureDetector(
+              onTap: _togglePlay,
+              onDoubleTap: _handleDoubleTap,
+              child: _initialized
+                  ? AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio,
                       child: VideoPlayer(_controller),
-                    ),
-                  )
-                : const Center(child: CircularProgressIndicator(color: Colors.grey)),
+                    )
+                  : const CircularProgressIndicator(color: Colors.grey),
+            ),
           ),
         ),
 
@@ -182,13 +217,14 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
                   context: context,
                   isScrollControlled: true,
                   backgroundColor: Colors.transparent,
-                  builder: (_) => CommentModal(postId: widget.post['id'].toString()),
+                  builder: (_) =>
+                      CommentModal(postId: widget.post['id'].toString()),
                 ),
               ),
-              
-              const SizedBox(height: 25),
-              // Spinning Disc (Aesthetic)
-              _buildMusicDisc(),
+
+              // const SizedBox(height: 25),
+              // // Spinning Disc (Aesthetic)
+              // _buildMusicDisc(),
             ],
           ),
         ),
@@ -196,10 +232,14 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
         // 5. BOTTOM INFO (User & Caption)
         Positioned(
           left: 15,
-          bottom: 40,
+          bottom: 100, // Increased to prevent nav bar overlap
           right: 80, // Space for right icons
           child: FutureBuilder<Map<String, dynamic>?>(
-            future: Supabase.instance.client.from('profiles').select().eq('id', widget.post['user_id']).maybeSingle(),
+            future: Supabase.instance.client
+                .from('profiles')
+                .select()
+                .eq('id', widget.post['user_id'])
+                .maybeSingle(),
             builder: (context, snapshot) {
               final user = snapshot.data;
               final username = user?['username'] ?? 'User';
@@ -208,34 +248,79 @@ class _ShortsPlayerItemState extends State<ShortsPlayerItem> {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 18,
-                        backgroundColor: Colors.white,
-                        backgroundImage: avatar != null ? NetworkImage(avatar) : null,
-                        child: avatar == null ? const Icon(Icons.person, size: 20, color: Colors.black) : null,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        username,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                      const SizedBox(width: 10),
-                      // Follow Button
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.white),
-                          borderRadius: BorderRadius.circular(6),
+                  GestureDetector(
+                    onTap: () {
+                      // Pause video before navigating away
+                      _controller.pause();
+                      setState(() => _isPlaying = false);
+
+                      // Navigate to user's profile
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ProfileScreen(userId: widget.post['user_id']),
                         ),
-                        child: const Text("Follow", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                      )
-                    ],
+                      ).then((_) {
+                        // Resume playing when coming back from profile
+                        if (mounted && _initialized) {
+                          _controller.play();
+                          setState(() => _isPlaying = true);
+                        }
+                      });
+                    },
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: Colors.white,
+                          backgroundImage: avatar != null
+                              ? NetworkImage(avatar)
+                              : null,
+                          child: avatar == null
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 20,
+                                  color: Colors.black,
+                                )
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          username,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        // Follow Button
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.white),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            "Follow",
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   // Caption
-                  if (widget.post['caption'] != null && widget.post['caption'].isNotEmpty)
+                  if (widget.post['caption'] != null &&
+                      widget.post['caption'].isNotEmpty)
                     Text(
                       widget.post['caption'],
                       maxLines: 2,
@@ -277,7 +362,12 @@ class _ActionIcon extends StatelessWidget {
   final String label;
   final VoidCallback onTap;
 
-  const _ActionIcon({required this.icon, required this.color, required this.label, required this.onTap});
+  const _ActionIcon({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -289,12 +379,21 @@ class _ActionIcon extends StatelessWidget {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.black.withOpacity(0.3), // Background for better visibility
+              color: Colors.black.withOpacity(
+                0.3,
+              ), // Background for better visibility
             ),
             child: Icon(icon, color: color, size: 32),
           ),
           const SizedBox(height: 4),
-          Text(label, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
